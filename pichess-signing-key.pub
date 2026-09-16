@@ -1,5 +1,3 @@
-# pichess signing public key
-
-Paste the contents of ~/.pichess/signing/public.pem here after running
-scripts/gen-signing-key.sh, and pin the same key in scripts/netinstall.sh
-(replace the placeholder key block) before the first tagged release.
+-----BEGIN PUBLIC KEY-----
+MCowBQYDK2VwAyEAKaLxQlv4P4thLriIrmAeNUTOSXjB8xHoBAGp1nS1T94=
+-----END PUBLIC KEY-----

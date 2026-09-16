@@ -22,7 +22,7 @@ FORCE=false
 # the root of trust: it must match the key used by scripts/sign-release.sh.
 # A release whose checksums.txt.sig does not verify against this key is refused.
 SIGNING_PUBLIC_KEY='-----BEGIN PUBLIC KEY-----
-MCowBQYDK2VwAyEAnLajNTQPa5qm5Zsyk8wH7lRkOPqaxGcipn2yxCzlgRY=
+MCowBQYDK2VwAyEAKaLxQlv4P4thLriIrmAeNUTOSXjB8xHoBAGp1nS1T94=
 -----END PUBLIC KEY-----'
 
 print_usage() {
