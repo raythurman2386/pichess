@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Name=Pichess
+GenericName=Pichess
+Comment=Chess for the pi suite
+Exec=pichess
+TryExec=pichess
+Icon=pichess
+Terminal=false
+StartupNotify=true
+Categories=Game;
+Keywords=chess;game
+StartupWMClass=pichess
