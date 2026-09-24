@@ -105,6 +105,43 @@ impl fmt::Display for Move {
     }
 }
 
+impl Position {
+    /// Coordinate notation (`e2e4`, `e7e8q`) as a move in this position.
+    /// Castling and en passant are told apart from the piece that moves.
+    /// Legality is the caller's check — a parsed move may still be illegal.
+    pub fn parse_uci(&self, uci: &str) -> Option<Move> {
+        if uci.len() < 4 || uci.len() > 5 {
+            return None;
+        }
+        let from = Square::parse(&uci[0..2])?;
+        let to = Square::parse(&uci[2..4])?;
+        if uci.len() == 5 {
+            let kind = PieceKind::from_letter(uci.chars().nth(4)?)?;
+            return Some(Move::Promotion { from, to, kind });
+        }
+        match self.piece_at(from) {
+            Some(Piece {
+                kind: PieceKind::King,
+                ..
+            }) if (to.0 as i32 - from.0 as i32).abs() == 2 => Some(Move::Castle { from, to }),
+            _ => {
+                if self.piece_at(to).is_some()
+                    || self.ep_square == Some(to)
+                        && self.piece_at(from).map(|p| p.kind) == Some(PieceKind::Pawn)
+                {
+                    if self.ep_square == Some(to) {
+                        Some(Move::EnPassant { from, to })
+                    } else {
+                        Some(Move::Quiet { from, to })
+                    }
+                } else {
+                    Some(Move::Quiet { from, to })
+                }
+            }
+        }
+    }
+}
+
 /// Why the game ended, when it did.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum GameOver {

@@ -5,6 +5,7 @@ pub mod eval;
 pub mod icons;
 pub mod piece;
 pub mod position;
+pub mod puzzle;
 pub mod san;
 pub mod search;
 pub mod stats;
