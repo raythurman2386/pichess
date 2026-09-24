@@ -83,6 +83,21 @@ pub struct Settings {
     pub flipped: bool,
     #[serde(default)]
     pub records: std::collections::BTreeMap<String, LevelRecord>,
+    /// Local puzzle rating. `0` means "not set yet" — the window treats that as 1200.
+    #[serde(default)]
+    pub puzzle_rating: i32,
+    /// Puzzle ids already solved or missed, so the queue does not repeat them.
+    #[serde(default)]
+    pub puzzle_seen: Vec<String>,
+    /// Seed for the puzzle shuffle. `0` means "pick one on first use".
+    #[serde(default)]
+    pub puzzle_seed: u64,
+    /// Best rush score (puzzles solved in one 3-minute run).
+    #[serde(default)]
+    pub puzzle_rush_best: u32,
+    /// Civil day (`YYYY.MM.DD`) the daily puzzle was already scored.
+    #[serde(default)]
+    pub puzzle_daily: String,
 }
 
 impl Settings {
