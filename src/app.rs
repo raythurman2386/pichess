@@ -1264,13 +1264,12 @@ impl PichessApp {
                 play.kind,
                 play.puzzle.rating,
                 play.puzzle.id.clone(),
-                play.puzzle.themes.join(" · "),
                 play.streak,
             )
         }) else {
             return;
         };
-        let (already_rated, locked, kind, puzzle_rating, id, themes, streak) = summary;
+        let (already_rated, locked, kind, puzzle_rating, id, streak) = summary;
         if already_rated || locked {
             self.mark_practice(solved, &key, cx);
             return;
@@ -1279,7 +1278,7 @@ impl PichessApp {
             SessionKind::Rush => self.finish_rush(solved, key, cx),
             SessionKind::Daily => self.finish_daily(solved, key, puzzle_rating, id, cx),
             SessionKind::Rated | SessionKind::Theme => {
-                self.finish_rated(solved, key, puzzle_rating, id, themes, streak, cx);
+                self.finish_rated(solved, key, puzzle_rating, id, streak, cx);
             }
         }
     }
@@ -1309,7 +1308,6 @@ impl PichessApp {
         key: String,
         puzzle_rating: i32,
         id: String,
-        _themes: String,
         streak: u32,
         cx: &mut Context<Self>,
     ) {
@@ -1718,6 +1716,14 @@ struct RenderColors {
     accent: Hsla,
 }
 
+struct SideTone {
+    page: Hsla,
+    ink: Hsla,
+    muted: Hsla,
+    surface: Hsla,
+    accent: Hsla,
+}
+
 impl PichessApp {
     fn last_move(&self) -> Option<(Square, Square)> {
         self.position.last_move()
@@ -1907,15 +1913,18 @@ impl PichessApp {
     /// a tall window cannot stretch it.
     fn render_side(
         &mut self,
-        ink: Hsla,
-        muted: Hsla,
-        accent: Hsla,
-        surface: Hsla,
-        page: Hsla,
+        tone: SideTone,
         scale: f32,
         board_side: Pixels,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let SideTone {
+            page,
+            ink,
+            muted,
+            surface,
+            accent,
+        } = tone;
         let in_puzzle = self.puzzle.is_some();
         let headline = self.status.clone();
         let terminal = self.game_ended()
@@ -2579,9 +2588,18 @@ impl Render for PichessApp {
                     .p(px(12.))
                     .overflow_hidden()
                     .child(board)
-                    .child(
-                        self.render_side(ink, muted, accent, surface, page, scale, board_side, cx),
-                    ),
+                    .child(self.render_side(
+                        SideTone {
+                            page,
+                            ink,
+                            muted,
+                            surface,
+                            accent,
+                        },
+                        scale,
+                        board_side,
+                        cx,
+                    )),
             )
             .children(overlay)
     }
