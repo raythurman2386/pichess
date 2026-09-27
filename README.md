@@ -22,6 +22,9 @@ hardware (and happy on any Linux desktop).
 - **Aesthetic**: keyboard-first, segmented top bar, board that re-fits the
   window, a short pause before the engine replies, and live desktop
   theming (pimarchy/Omarchy palette + text scale).
+- **Sounds**: a wood knock when a piece lands, a heavier knock for a
+  capture, a soft bell on check, and quiet clicks for buttons.
+  `PICHESS_DISABLE_SOUND=1` turns them off.
 
 ## The engine
 
@@ -86,6 +89,13 @@ from Wikimedia Commons, licensed
 [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). This
 app's code is MIT; the piece artwork remains under its own license.
 
+## Sounds
+
+Move and button sounds in `assets/sounds/` are from
+[Kenney](https://kenney.nl) (Interface Sounds and Impact Sounds),
+[CC0](https://creativecommons.org/publicdomain/zero/1.0/). See
+`assets/sounds/CREDITS.txt` for which file became which cue.
+
 ## Development
 
 ```sh
@@ -101,5 +111,5 @@ aarch64 tarballs (glibc 2.39+, e.g. Raspberry Pi OS / Debian 13).
 
 ## License
 
-MIT — see [LICENSE](LICENSE). Chess piece artwork: CC BY-SA 3.0 (see
-above).
+MIT — see [LICENSE](LICENSE). Chess piece artwork: CC BY-SA 3.0.
+Sounds: CC0 (Kenney). See above.

@@ -8,6 +8,7 @@ pub mod position;
 pub mod puzzle;
 pub mod san;
 pub mod search;
+pub mod sound;
 pub mod stats;
 pub mod theme;
 

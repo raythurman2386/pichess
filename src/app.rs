@@ -22,6 +22,7 @@ use pichess::puzzle::{
 };
 use pichess::san::{ending_label, format_san, player_names, push_san, to_pgn, MoveRecord};
 use pichess::search::{search_with, Level, ThreadRng};
+use pichess::sound::{self, Outcome, Sound};
 use pichess::stats::{store_paths, Mode, SavedGame, Settings, Store};
 
 actions!(
@@ -265,6 +266,8 @@ struct PuzzlePlay {
     rush_over: bool,
     rush_seen: Vec<String>,
     deadline: Option<Instant>,
+    /// Last rush-clock second that already chimed, so the tick plays once.
+    rush_chime: Option<u64>,
 }
 
 pub struct PichessApp {
@@ -478,6 +481,7 @@ impl PichessApp {
             self.next_puzzle(cx);
             return;
         }
+        sound::play(Sound::Click);
         self.cancel_engine();
         self.position = Position::new();
         self.records.clear();
@@ -493,10 +497,14 @@ impl PichessApp {
     }
 
     fn set_mode(&mut self, mode: Mode, cx: &mut Context<Self>) {
-        if self.puzzle.is_some() {
+        let leaving = self.puzzle.is_some();
+        if leaving {
             self.leave_puzzles(cx);
         }
         if self.mode == mode {
+            if leaving {
+                sound::play(Sound::Click);
+            }
             cx.notify();
             return;
         }
@@ -506,6 +514,7 @@ impl PichessApp {
             (Mode::HumanWhite, Mode::HumanBlack) | (Mode::HumanBlack, Mode::HumanWhite)
         );
         self.mode = mode;
+        sound::play(Sound::Toggle);
         // Switching seats turns the board to face the new side.
         if side_changed {
             self.flipped = mode == Mode::HumanBlack;
@@ -524,6 +533,7 @@ impl PichessApp {
             return;
         }
         self.level = level;
+        sound::play(Sound::Toggle);
         self.save_settings();
         if self.puzzle.is_some() {
             cx.notify();
@@ -541,6 +551,7 @@ impl PichessApp {
 
     fn flip(&mut self, cx: &mut Context<Self>) {
         self.flipped = !self.flipped;
+        sound::play(Sound::Click);
         if self.puzzle.is_none() {
             self.save_settings();
         }
@@ -549,6 +560,7 @@ impl PichessApp {
 
     fn undo(&mut self, cx: &mut Context<Self>) {
         if self.puzzle.is_some() {
+            sound::play(Sound::Back);
             self.retry_puzzle(cx);
             return;
         }
@@ -567,6 +579,9 @@ impl PichessApp {
             self.position.undo_move();
             self.records.pop();
             undone += 1;
+        }
+        if undone > 0 {
+            sound::play(Sound::Back);
         }
         self.resigned = None;
         self.generation += 1;
@@ -587,6 +602,7 @@ impl PichessApp {
         if self.game_ended() {
             return;
         }
+        sound::play(Sound::Down);
         self.resigned = Some(self.position.turn);
         self.cancel_engine();
         self.record_result(pichess::position::GameOver::Checkmate(
@@ -620,7 +636,9 @@ impl PichessApp {
             self.apply_puzzle_move(mv, cx);
             return;
         }
+        let captures = mv.is_capture(&self.position.board);
         push_san(&mut self.position, &mut self.records, mv);
+        self.play_landed(mv, captures, self.outcome_now());
         self.selection = Selection::None;
         self.cursor = mv.to();
         self.refresh_status();
@@ -631,6 +649,23 @@ impl PichessApp {
         cx.notify();
         if self.engine_to_move() && !self.game_ended() {
             self.spawn_engine_move(cx);
+        }
+    }
+
+    fn play_landed(&self, mv: Move, captures: bool, outcome: Outcome) {
+        let (body, accent) = sound::cue_for_move(mv, captures, outcome);
+        sound::play_landed(body, accent);
+    }
+
+    fn outcome_now(&self) -> Outcome {
+        match self.position.game_over() {
+            Some(pichess::position::GameOver::Checkmate(winner)) => Outcome::Mate {
+                winner_is_computer: self.computer_plays() == Some(winner),
+            },
+            Some(_) => Outcome::Draw,
+            None => Outcome::Play {
+                check: self.position.in_check_self(),
+            },
         }
     }
 
@@ -729,6 +764,7 @@ impl PichessApp {
             Selection::Square(from) => {
                 if from == sq {
                     self.selection = Selection::None;
+                    sound::play(Sound::Back);
                     cx.notify();
                     return;
                 }
@@ -754,25 +790,30 @@ impl PichessApp {
 
     fn pick_up(&mut self, sq: Square, cx: &mut Context<Self>) {
         let Some(piece) = self.position.piece_at(sq) else {
+            if !matches!(self.selection, Selection::None) {
+                sound::play(Sound::Back);
+            }
             self.selection = Selection::None;
             cx.notify();
             return;
         };
-        if piece.color != self.position.turn
-            || !self.human_controls(piece.color)
-            || self.game_ended()
-            || self.thinking
-        {
+        let movable = piece.color == self.position.turn
+            && self.human_controls(piece.color)
+            && !self.game_ended()
+            && !self.thinking
+            && !self.legal_moves_from(sq).is_empty();
+        if !movable {
+            let complain =
+                self.human_controls(self.position.turn) && !self.game_ended() && !self.thinking;
             self.selection = Selection::None;
-            cx.notify();
-            return;
-        }
-        if self.legal_moves_from(sq).is_empty() {
-            self.selection = Selection::None;
+            if complain {
+                sound::play(Sound::Error);
+            }
             cx.notify();
             return;
         }
         self.selection = Selection::Square(sq);
+        sound::play(Sound::Select);
         cx.notify();
     }
 
@@ -783,6 +824,7 @@ impl PichessApp {
                 from: mv.from(),
                 to: mv.to(),
             });
+            sound::play(Sound::Open);
             cx.notify();
             return;
         }
@@ -794,7 +836,19 @@ impl PichessApp {
         self.square_clicked(sq, cx);
     }
 
+    fn set_help(&mut self, open: bool, cx: &mut Context<Self>) {
+        if self.show_help == open {
+            return;
+        }
+        self.show_help = open;
+        sound::play(if open { Sound::Open } else { Sound::Back });
+        cx.notify();
+    }
+
     fn cancel(&mut self, cx: &mut Context<Self>) {
+        if !matches!(self.selection, Selection::None) {
+            sound::play(Sound::Back);
+        }
         self.selection = Selection::None;
         cx.notify();
     }
@@ -818,11 +872,13 @@ impl PichessApp {
     fn export_pgn(&mut self, cx: &mut Context<Self>) {
         if self.puzzle.is_some() {
             self.status = "Leave puzzles before exporting the game".into();
+            sound::play(Sound::Error);
             cx.notify();
             return;
         }
         if self.records.is_empty() {
             self.status = "No moves to export yet".into();
+            sound::play(Sound::Error);
             cx.notify();
             return;
         }
@@ -841,8 +897,14 @@ impl PichessApp {
             n += 1;
         };
         match std::fs::write(&path, pgn) {
-            Ok(()) => self.status = format!("Exported {}", path.display()),
-            Err(err) => self.status = format!("Export failed: {err}"),
+            Ok(()) => {
+                self.status = format!("Exported {}", path.display());
+                sound::play(Sound::Confirm);
+            }
+            Err(err) => {
+                self.status = format!("Export failed: {err}");
+                sound::play(Sound::Error);
+            }
         }
         cx.notify();
     }
@@ -866,6 +928,7 @@ impl PichessApp {
         }
         if self.pack.is_empty() {
             self.status = "No puzzles in the pack".into();
+            sound::play(Sound::Error);
             cx.notify();
             return;
         }
@@ -879,6 +942,7 @@ impl PichessApp {
         };
         let Some(puzzle) = self.choose_puzzle() else {
             self.status = "No puzzles in the pack".into();
+            sound::play(Sound::Error);
             cx.notify();
             return;
         };
@@ -902,6 +966,7 @@ impl PichessApp {
             rush_over: false,
             rush_seen: Vec::new(),
             deadline: None,
+            rush_chime: None,
         });
         self.present_puzzle(puzzle, cx);
     }
@@ -1051,6 +1116,7 @@ impl PichessApp {
             return;
         }
         if self.puzzle.as_ref().is_some_and(|play| play.rush_over) {
+            sound::play(Sound::Click);
             self.restart_rush(cx);
             return;
         }
@@ -1060,12 +1126,20 @@ impl PichessApp {
             .is_some_and(|play| play.kind == SessionKind::Daily)
         {
             self.status = "That's the puzzle for today".into();
+            sound::play(Sound::Error);
             cx.notify();
             return;
         }
+        let skipping = self.puzzle.as_ref().is_some_and(|play| {
+            play.kind == SessionKind::Rush
+                && !play.rush_over
+                && !play.rated
+                && play.phase == PuzzlePhase::YourTurn
+        });
         if self.record_rush_skip(cx) {
             return;
         }
+        sound::play(if skipping { Sound::Error } else { Sound::Click });
         self.load_another(cx);
     }
 
@@ -1195,7 +1269,15 @@ impl PichessApp {
             }
             play.line[play.next]
         };
+        let captures = mv.is_capture(&self.position.board);
         push_san(&mut self.position, &mut self.records, mv);
+        self.play_landed(
+            mv,
+            captures,
+            Outcome::Play {
+                check: self.position.in_check_self(),
+            },
+        );
         if let Some(play) = self.puzzle.as_mut() {
             play.next += 1;
             play.task = None;
@@ -1217,15 +1299,24 @@ impl PichessApp {
             }
             (play.next, play.line[play.next], play.line.clone())
         };
+        let captures = mv.is_capture(&self.position.board);
         match grade(&line, index, mv) {
             Verdict::Wrong => {
                 let key = format_san(&self.position, expected);
                 push_san(&mut self.position, &mut self.records, mv);
+                self.play_landed(mv, captures, Outcome::PuzzleMiss);
                 self.cursor = mv.to();
                 self.finish_puzzle(false, key, cx);
             }
             Verdict::Continue => {
                 push_san(&mut self.position, &mut self.records, mv);
+                self.play_landed(
+                    mv,
+                    captures,
+                    Outcome::Play {
+                        check: self.position.in_check_self(),
+                    },
+                );
                 self.cursor = mv.to();
                 self.selection = Selection::None;
                 if let Some(play) = self.puzzle.as_mut() {
@@ -1235,6 +1326,7 @@ impl PichessApp {
             }
             Verdict::Solved => {
                 push_san(&mut self.position, &mut self.records, mv);
+                self.play_landed(mv, captures, Outcome::PuzzleSolved);
                 self.cursor = mv.to();
                 self.selection = Selection::None;
                 self.finish_puzzle(true, String::new(), cx);
@@ -1253,6 +1345,7 @@ impl PichessApp {
             play.line[play.next]
         };
         let key = format_san(&self.position, expected);
+        sound::play(Sound::Error);
         self.finish_puzzle(false, key, cx);
     }
 
@@ -1415,15 +1508,20 @@ impl PichessApp {
     }
 
     fn set_session(&mut self, kind: SessionKind, cx: &mut Context<Self>) {
-        if self.puzzle.is_none() {
+        let fresh = self.puzzle.is_none();
+        if fresh {
             self.enter_puzzles(cx);
         }
         let Some(play) = self.puzzle.as_ref() else {
             return;
         };
         if play.kind == kind && kind != SessionKind::Theme {
+            if fresh {
+                sound::play(Sound::Toggle);
+            }
             return;
         }
+        sound::play(Sound::Toggle);
         let cycle = kind == SessionKind::Theme && play.kind == SessionKind::Theme;
         if let Some(play) = self.puzzle.as_mut() {
             if cycle {
@@ -1470,6 +1568,7 @@ impl PichessApp {
         if let Some(play) = self.puzzle.as_mut() {
             play.deadline = Some(deadline);
             play.rush_over = false;
+            play.rush_chime = None;
         }
         let task = cx.spawn(async move |this, cx| loop {
             cx.background_executor()
@@ -1505,6 +1604,14 @@ impl PichessApp {
             self.end_rush(cx);
             return true;
         }
+        let left = deadline.saturating_duration_since(Instant::now());
+        let already = self.puzzle.as_ref().and_then(|play| play.rush_chime);
+        if let Some(sec) = sound::rush_chime(left.as_secs(), already) {
+            if let Some(play) = self.puzzle.as_mut() {
+                play.rush_chime = Some(sec);
+            }
+            sound::play(Sound::Tick);
+        }
         if !matches!(phase, PuzzlePhase::Solved | PuzzlePhase::Failed) {
             self.refresh_puzzle_status();
         }
@@ -1535,6 +1642,7 @@ impl PichessApp {
         self.selection = Selection::None;
         self.generation += 1;
         self.status = format!("Rush over. You solved {score}. Best is {best}.");
+        sound::play(Sound::Down);
         cx.notify();
     }
 
@@ -2298,7 +2406,13 @@ impl Render for PichessApp {
                         "Tactics from real games. Leave by picking a play mode",
                         in_puzzle,
                         None,
-                        cx.listener(|this, _, _, cx| this.enter_puzzles(cx)),
+                        cx.listener(|this, _, _, cx| {
+                            let fresh = this.puzzle.is_none();
+                            this.enter_puzzles(cx);
+                            if fresh && this.puzzle.is_some() {
+                                sound::play(Sound::Toggle);
+                            }
+                        }),
                     )),
             )
             .when(!in_puzzle, |bar| {
@@ -2341,10 +2455,7 @@ impl Render for PichessApp {
                     .small()
                     .label("Keys")
                     .tooltip_with_action("Keyboard shortcuts", &ToggleHelp, Some("pichess"))
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.show_help = !this.show_help;
-                        cx.notify();
-                    })),
+                    .on_click(cx.listener(|this, _, _, cx| this.set_help(!this.show_help, cx))),
             )
             .when(thinking, |bar| {
                 bar.child(
@@ -2472,10 +2583,7 @@ impl Render for PichessApp {
                 .aria_label("Keyboard shortcuts")
                 .on_mouse_down(
                     MouseButton::Left,
-                    cx.listener(|this, _, _, cx| {
-                        this.show_help = false;
-                        cx.notify();
-                    }),
+                    cx.listener(|this, _, _, cx| this.set_help(false, cx)),
                 )
                 .child(
                     v_flex()
@@ -2570,8 +2678,7 @@ impl Render for PichessApp {
                 this.move_cursor_screen(0, -1, cx);
             }))
             .on_action(cx.listener(|this, _: &ToggleHelp, _, cx| {
-                this.show_help = !this.show_help;
-                cx.notify();
+                this.set_help(!this.show_help, cx);
             }))
             .on_action(cx.listener(|_, _: &ToggleFullscreen, window, _| {
                 window.toggle_fullscreen();
